@@ -1,19 +1,19 @@
-from PyQt5.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QSizePolicy, QLabel,
-    QGridLayout, QGroupBox, QDialog, QWidget, QDial, QSlider, QLineEdit, QPushButton, 
-    QHBoxLayout, QTabWidget, QComboBox, QTextEdit)
-from PyQt5.QtCore import Qt
-from PyQt5 import QtWidgets, QtGui, QtCore
+from PyQt5.QtWidgets import (QApplication, QLabel, QGridLayout, QGroupBox, 
+                             QWidget, QSlider, QLineEdit, QPushButton, 
+                            QHBoxLayout, QTabWidget, QComboBox, QTextEdit)
+from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtGui import QFont
 import pyqtgraph as pg
-import numpy as np
+from numpy import linspace, pi, inf, sqrt
 import sys
 from scipy.integrate import odeint, solve_ivp
-import scipy as sp
-import matplotlib.pyplot as plt
+from animateMSD import AnimationWidget
 
 class MainWindow(QWidget):
     def __init__(self):
         super(MainWindow,self).__init__()
 
+        #Building the main tab
         self.GraphGroupBox()
         x = []
         y = []
@@ -31,7 +31,6 @@ class MainWindow(QWidget):
         tabwidget = QTabWidget()
         MainLayout = QGridLayout()
 
-        #Creating the first tab
         w1 = QWidget()
         t1 = QGridLayout()
         t1.addWidget(self.GraphGroupBox, 0, 0, 1, 2)
@@ -40,8 +39,10 @@ class MainWindow(QWidget):
         t1.addWidget(self.initialConditionsGroupBox, 2, 1)
         w1.setLayout(t1)
         tabwidget.addTab(w1,"Main")
+        #END MAIN TAB
         
-        #Creating the second tab
+
+        #Building the ODE tab
         self.createODEintGroupBox()
         self.createSolveIVPGroupBox()
         self.ODEintGroupBox.setEnabled(True)
@@ -66,9 +67,6 @@ class MainWindow(QWidget):
         t2.addWidget(self.solveIVPGroupBox, 1, 1)
         t2.setColumnStretch(0, 1)
         t2.setColumnStretch(1, 1)
-        w2.setLayout(t2)
-        tabwidget.addTab(w2, "ODE Options")
-
         bottomlayout = QHBoxLayout()
         bottomLabel = QTextEdit()
         bottomLabel.setPlainText("Note: Setting Step Size options to ""0"" will leave the values to be determined automatically by the solver.")
@@ -79,9 +77,61 @@ class MainWindow(QWidget):
         t2.setRowStretch(1,3)
         t2.setRowStretch(2,1)
         t2.setRowStretch(3,10)
+        w2.setLayout(t2)
+        tabwidget.addTab(w2, "ODE Options")
+        #END ODE TAB
+
+
+        #Building the animation tab
+        w3 = QWidget()
+        self.animation = None
+    
+        startAnimationButton = QPushButton("Start")
+        startAnimationButton.pressed.connect(self.startAnimation)
+        startAnimationButton.pressed.connect(self.startTimer)
+
+        self.t3 = QGridLayout()
+        self.t3.addWidget(startAnimationButton, 1, 1, 1, 1)
+
+        self.timerLabel = QLabel("0.00")
+        self.timerLabel.setFont(QFont("LCD", 36))
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.updateTimer)
+        self.t3.addWidget(self.timerLabel, 0, 1)
+
+        self.t3.setRowStretch(0, 5)
+        self.t3.setRowStretch(1, 1)
+        self.t3.setColumnStretch(0, 2)
+        self.t3.setColumnStretch(1, 1)
+
+        w3.setLayout(self.t3)
+        tabwidget.addTab(w3, "Animation")
+        #END ANIMATION TAB
+
+
         MainLayout.addWidget(tabwidget)
         self.setLayout(MainLayout)
 
+        ########## END INIT FUNCTION ##########
+
+    
+    def createAnimationWidget(self):
+        m = float(self.massInput.text())
+        k = float(self.springInput.text())
+        b = float(self.damperInput.text())
+        x0 = float(self.xPosInput.text())
+        v0 = float(self.velocityInput.text())
+        t = linspace(0, float(self.ODEINTevalTimeInput.text()), 1000)
+        solverOutput = self.horizontalPositions
+        
+        if self.animation != None:
+            self.animation.deleteMass()
+
+        self.animation = AnimationWidget(m, k, b, x0, v0, t, solverOutput) 
+        self.t3.addWidget(self.animation, 0, 0, 1, 2)
+        
+    def startAnimation(self):
+        self.animation.startAnimation()
 
     def GraphGroupBox(self):
         self.GraphGroupBox = QGroupBox(title="Graphs")
@@ -129,7 +179,7 @@ class MainWindow(QWidget):
         self.settlingTimeOutput.setStyleSheet("font-weight: bold")
 
         startStopButton = QPushButton()
-        buttonConnections = [self.ODEsolver, self.xSliderValue, self.velocitySliderValue, self.massSliderValue, self.springSliderValue, self.damperSliderValue]
+        buttonConnections = [self.ODEsolver, self.xSliderValue, self.velocitySliderValue, self.massSliderValue, self.springSliderValue, self.damperSliderValue, self.createAnimationWidget]
         startStopButton.setText("Run")
         for connection in buttonConnections:
             startStopButton.clicked.connect(connection)
@@ -389,7 +439,20 @@ class MainWindow(QWidget):
         self.solverComboBox.setCurrentText("odeint")
         self.enableODEWidgets()
 
+    def updateTimer(self):
+        currentTime = float(self.timerLabel.text())
+        maxTime = float(self.ODEINTevalTimeInput.text())
+        if currentTime != maxTime:
+            nextTime = str("{:.2f}".format(currentTime + 0.01))
+            self.timerLabel.setText(nextTime)
+        else:
+            self.timer.stop()
 
+        self.ODEINTevalTimeInput.text()
+
+    def startTimer(self):
+        self.timer.start(10)
+        self.timerLabel.setText("0.00")
 
     def ODEsolver(self):
         m = float(self.massInput.text())
@@ -417,7 +480,7 @@ class MainWindow(QWidget):
             if int(evalTime) == 0:
                 evalTime = 10
                 self.ODEINTevalTimeInput.setText("10")
-            t = np.linspace(0, evalTime, 1000)
+            t = linspace(0, evalTime, 1000)
 
             sol = odeint(dSdx, y0=S0, t=t, tfirst=True, h0=firstStepSize, hmin=minStepSize, hmax=maxStepSize)
             sol_x = sol.T[0] #horizontal position
@@ -433,7 +496,7 @@ class MainWindow(QWidget):
 
             maxStepSize = float(self.solveIVPmaxStepSizeInput.text())
             if int(maxStepSize) == 0:
-                maxStepSize = np.inf
+                maxStepSize = inf
 
             evalTime = float(self.solveIVPevalTimeInput.text())
             if int(evalTime) == 0:
@@ -453,8 +516,8 @@ class MainWindow(QWidget):
         totalEnergy = kineticEnergy + potentialEnergy
 
         #Frequency and settling time calcs
-        floatNaturalFrequency = (1 / (2 * np.pi)) * np.sqrt(k / m)
-        floatDampedNaturalFrequency = floatNaturalFrequency * np.sqrt(1 - b**2)
+        floatNaturalFrequency = (1 / (2 * pi)) * sqrt(k / m)
+        floatDampedNaturalFrequency = floatNaturalFrequency * sqrt(1 - b**2)
         tau = 1/(b * floatNaturalFrequency)
         floatSettlingTime = 4 * tau
 
@@ -472,6 +535,7 @@ class MainWindow(QWidget):
         self.dampedNatFrequencyOutput.setText(str(dampedNaturalFrequency))
         self.settlingTimeOutput.setText(str(settlingTime))
 
+        self.horizontalPositions = sol.T[0]
         return sol
     
 app = QApplication(sys.argv)
